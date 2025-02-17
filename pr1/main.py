@@ -57,7 +57,7 @@ for car in cars:
     if all([func[0](car[metric], func[2]) for metric, func in metrics.items() if metric != "Цена (100 тыс руб.)"]):
         res.append(car)
 car_r = sorted(res, key=lambda x: [x[i] for i in metrics])
-print("По субоптимизации ",  "; ".join([f"{car["Модель"]},{car["№"]}" for car in car_r]))
+print("По субоптимизации ",  "".join([f"{car["Модель"]},{car["№"]}" for car in car_r][0]))
 
 a = list(sorted(cars, key=lambda item: tuple(item[key] for key in metrics.keys())))
 print("Лексико-графическая оптимизация:", ([f"{car["Модель"]},{car["№"]}" for car in a])[0])

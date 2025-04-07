@@ -54,6 +54,7 @@ def check_consistency(matrix, priority_vector, name):
     P = S * priority_vector
     lambda_max = np.sum(P)
     n = len(matrix)
+
     # print(lambda_max, (lambda_max - n) / (n - 1))
     if len(matrix) == 4:
         ОС = get_dels((lambda_max - n) / (n - 1), 0.9)

@@ -84,7 +84,7 @@ def simplex_iteration(system, coef_basis, coef_not_basis, basis_values, not_basi
     key_element = system[index_column][index_row]
     basis_values[index_row], not_basis_values[index_column] = not_basis_values[index_column], basis_values[index_row]
     coef_basis[index_row], coef_not_basis[index_column] = coef_not_basis[index_column], coef_basis[index_row]
-
+    print(key_element)
     new_key_element = round(1 / key_element, PRECISION)
     data = [[0] * (len(coef_basis) + 1) for _ in range(len(coef_not_basis) + 1)]
 

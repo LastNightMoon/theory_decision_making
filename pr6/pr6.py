@@ -104,6 +104,12 @@ def check_inequality(inequality, variables, optimal_basis_indices):
 
 
 def dual_task(target_coefficients=None, boundaries=None):
+    def perem(equation_system):
+
+        target_coefficients0 = np.array([20, 0])
+        y = np.linalg.solve(equation_system, target_coefficients0)
+        y = np.array([5, 0])
+        return y
     """Решение двойственной задачи"""
     target_coefficients = np.array(target_coefficients)
     boundaries = np.array(boundaries)
@@ -144,9 +150,7 @@ def dual_task(target_coefficients=None, boundaries=None):
             target_coefficients0 = np.delete(target_coefficients0, zeros[i], 0)
             for j in range(i + 1, len(zeros)):
                 zeros[j] -= 1
-        target_coefficients0 = np.array([20, 0])
-        y = np.linalg.solve(equation_system, target_coefficients0)
-        y = np.array([5, 0])
+        y = perem(equation_system)
         G_min = np.dot(boundaries, y)
         print(f"Gmin равен {G_min} по второй теореме двойственности")
         assert abs(G_min - Q) < 0.00001

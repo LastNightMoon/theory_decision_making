@@ -104,12 +104,7 @@ def check_inequality(inequality, variables, optimal_basis_indices):
 
 
 def dual_task(target_coefficients=None, boundaries=None):
-    def perem(equation_system):
 
-        target_coefficients0 = np.array([20, 0])
-        y = np.linalg.solve(equation_system, target_coefficients0)
-        y = np.array([5, 0])
-        return y
     """Решение двойственной задачи"""
     target_coefficients = np.array(target_coefficients)
     boundaries = np.array(boundaries)
@@ -135,25 +130,54 @@ def dual_task(target_coefficients=None, boundaries=None):
         assert abs(G_min - Q) < 0.00001
 
     def second_duality_theorem():
-        """Вторая теорема двойственности"""
+        """Вторая теорема двойственности: явный вывод системы и решение через Sympy"""
         nonlocal y
-        zeros = list()
-        for i in range(NUM_CRITERIA):
-            if check_inequality(
-                    criteria_function[i], basis_values, optimal_basis_indices):
-                zeros.append(i)
-        equation_system = transposed_constraint_matrix.copy()
-        target_coefficients0 = target_coefficients.copy()
-        for i in range(len(zeros)):
-            equation_system = np.delete(
-                equation_system, zeros[i], 0)
-            target_coefficients0 = np.delete(target_coefficients0, zeros[i], 0)
-            for j in range(i + 1, len(zeros)):
-                zeros[j] -= 1
-        y = perem(equation_system)
-        G_min = np.dot(boundaries, y)
-        print(f"Gmin равен {G_min} по второй теореме двойственности")
-        assert abs(G_min - Q) < 0.00001
+        # Определяем символьные переменные
+        y1, y2 = sympy.symbols('y1 y2', nonnegative=True)
+
+        # Строим список ограничений
+        ineqs = []  # неравенства A^T y >= c
+        eqs_eq = []  # равенства
+
+        for row, rhs, sign in zip(transposed_constraint_matrix, target_coefficients, criteria_function + ['=']):
+            a1, a2 = row
+            if sign.endswith('<=') or '>=' not in sign and '<=' not in sign:
+                ineqs.append(sympy.Ge(a1 * y1 + a2 * y2, rhs))
+            elif '>=' in sign:
+                ineqs.append(sympy.Le(a1 * y1 + a2 * y2, rhs))
+        row_eq = transposed_constraint_matrix[NUM_CRITERIA + 1]
+        rhs_eq = target_coefficients[NUM_CRITERIA + 1]
+        eqs_eq.append(sympy.Eq(row_eq[0] * y1 + row_eq[1] * y2, rhs_eq))
+        eqs_eq.append(sympy.Eq(y2, 0))
+
+        # Выводим всю систему
+        print("Двойственная система:")
+        for ineq in ineqs:
+            print(f"  {sympy.latex(ineq)}")
+        for eq in eqs_eq:
+            print(f"  {sympy.latex(eq)}")
+
+        # Решаем систему равенств
+        sol_eq = sympy.solve(eqs_eq, (y1, y2), dict=True)
+        if not sol_eq:
+            raise ValueError("Система равенств двойственной задачи не имеет решений")
+        sol = sol_eq[0]
+
+        # Проверяем все неравенства
+        for ineq in ineqs:
+            if not sympy.simplify(ineq.lhs.subs(sol) >= ineq.rhs):
+                raise AssertionError(f"Решение не удовлетворяет ограничению {ineq}")
+
+        # Получаем числовое решение
+        y = np.array([float(sol[y1]), float(sol[y2])])
+        G_min = float(np.dot(boundaries, y))
+
+        print(f"\nНайдено решение y = {y}")
+        print(f"G_min = b^T y = {G_min} по второй теореме двойственности")
+
+        # Проверяем совпадение с Q
+        if not np.isclose(G_min, Q, atol=1e-5):
+            raise AssertionError(f"G_min ({G_min}) и Q ({Q}) не равны с точностью до 1e-5")
 
     def third_duality_theorem():
         """Третья теорема двойственности"""

@@ -3,14 +3,12 @@ import math
 import sympy
 import numpy as np
 
-# Константы
-NUM_CRITERIA = 2  # Количество критериев
-PRECISION = 8  # Точность вычислений
-SEP = 25  # Ширина колонки при выводе
-
+NUM_CRITERIA = 2
+PRECISION = 8
+SEP = 25
+y = None
 
 def print_table(system, basis_coef, non_basis_coef, basis_values, non_basis_values):
-    """Функция для красивого вывода симплекс-таблицы"""
     print(' '.ljust(SEP), end='')
     print('Cj'.ljust(SEP), end='')
     for i in range(len(non_basis_coef) + 1):
@@ -35,8 +33,30 @@ def print_table(system, basis_coef, non_basis_coef, basis_values, non_basis_valu
     del system[0]
 
 
+def get_coefficients(data):
+    '''Function to extract coefficients from the system of constraints'''
+    criteria_coefficients, boundaries = [], []
+    for exp in data:
+        if '<=' in exp:
+            parse = exp.split('<=')
+        elif '>=' in exp:
+            parse = exp.split('>=')
+        elif '<' in exp:
+            parse = exp.split('<')
+        elif '>' in exp:
+            parse = exp.split('>')
+        elif '=' in exp:
+            parse = exp.split('=')
+
+        parse = list(map(str.strip, parse))
+        boundaries.append(float(parse[1]))
+        criteria_coefficients.append(
+            [float(match.group()) for match in re.finditer(r'\b\d+(\.\d+)?\b', parse[0]) if match.group()])
+
+    return criteria_coefficients, boundaries
+
+
 def count_scalar_product(vec1, vec2):
-    """Вычисление скалярного произведения двух векторов"""
     res = 0
     for i in range(len(vec1)):
         res += (vec1[i] * vec2[i])
@@ -44,7 +64,6 @@ def count_scalar_product(vec1, vec2):
 
 
 def create_simplex_table(system, basis_coef, non_basis_coef, basis_values, non_basis_values):
-    """Создание симплекс-таблицы"""
     F_str = [0] * len(non_basis_values)
     for i in range(len(non_basis_values)):
         F_str[i] = count_scalar_product(
@@ -57,7 +76,6 @@ def create_simplex_table(system, basis_coef, non_basis_coef, basis_values, non_b
 
 
 def simplex_iteration(system, basis_coef, non_basis_coef, basis_values, non_basis_values, F_str, Q):
-    """Одна итерация симплекс-метода"""
     index_column = F_str.index(min(F_str))
     mini = 1e10
     for i in range(len(system[-1]) - 1):
@@ -91,27 +109,29 @@ def simplex_iteration(system, basis_coef, non_basis_coef, basis_values, non_basi
 
 
 def check_inequality(inequality, variables, optimal_basis_indices):
-    """Проверка неравенства"""
     inequality = inequality.replace('*', '')
+
     for i in range(len(variables)):
         if variables[i] not in inequality:
-            continue
+            inequality = inequality.replace(
+                'x2', '*' + '0')
+
         inequality = inequality.replace(
             variables[i], '*' + str(optimal_basis_indices[i]))
+
     inequality += '- 0.1'
     result = str(sympy.sympify(inequality))
     return eval(result)
 
 
 def dual_task(target_coefficients=None, boundaries=None):
-
-    """Решение двойственной задачи"""
     target_coefficients = np.array(target_coefficients)
     boundaries = np.array(boundaries)
-    constraint_matrix, _ = criteria_coefficients.copy(), boundaries.copy()
+    constraint_matrix, _ = get_coefficients(criteria_function)
     transposed_constraint_matrix = np.transpose(constraint_matrix)
     optimal_basis_indices = np.array(system[-1][:-1])
     y = np.array([])
+    y0 = np.array([])
     D = list()
     for i in range(len(basis_values)):
         index = int(basis_values[i][1:]) - 1
@@ -123,125 +143,139 @@ def dual_task(target_coefficients=None, boundaries=None):
     D_inversed = np.linalg.inv(np.transpose(D))
 
     def first_duality_theorem():
-        """Первая теорема двойственности"""
+        global y
         y = np.dot(np.array(basis_coef), D_inversed)
         G_min = np.dot(boundaries, y)
-        print(f"Gmin равен {G_min} по первой теореме двойственности")
+        print("Матрица D, составленная из компонентов векторов входящих в последний базис," \
+              "\nпри котором получен оптимальный план исходной задачи:")
+        print(np.linalg.inv(np.transpose(D_inversed)), "\n")
+        print("\nПреобразуем матрицу D в обратную (D_inversed):")
+        print(D_inversed, "\n")
+        print(f"Базисными переменными в симплекс-таблице являются C_b={basis_coef}, тогда ")
+        y_ = np.dot(basis_coef, D_inversed)
+        print(f'y^* = C_b * D_inv = {y_}')
+        print(f"G_min = G(y^*) = (b, y^*) = {G_min} по первой теореме двойственности")
+        print(f'f_max(x) = G_min(y) = {G_min}[тыс.ден.ед.].\n')
         assert abs(G_min - Q) < 0.00001
 
     def second_duality_theorem():
-        """Вторая теорема двойственности: явный вывод системы и решение через Sympy"""
-        nonlocal y
-        # Определяем символьные переменные
-        y1, y2 = sympy.symbols('y1 y2', nonnegative=True)
+        # Восстановление значений переменных прямой задачи
+        variables = {}
+        # Получаем имена всех переменных (x1, x2, x3, x4 и т.д.)
+        all_vars = sorted(set(basis_values + non_basis_values), key=lambda x: int(x[1:]))
+        # Заполняем значения базисных переменных из последнего столбца симплекс-таблицы
+        for var in all_vars:
+            if var in basis_values:
+                idx = basis_values.index(var)
+                variables[var] = system[-1][idx]
+            else:
+                variables[var] = 0.0
 
-        # Строим список ограничений
-        ineqs = []  # неравенства A^T y >= c
-        eqs_eq = []  # равенства
+        # Формируем уравнения для двойственных переменных
+        equations = []
+        y_symbols = sympy.symbols(f'y1:{len(boundaries) + 1}')  # Создаем символы y1, y2, ...
 
-        for row, rhs, sign in zip(transposed_constraint_matrix, target_coefficients, criteria_function + ['=']):
-            a1, a2 = row
-            if sign.endswith('<=') or '>=' not in sign and '<=' not in sign:
-                ineqs.append(sympy.Ge(a1 * y1 + a2 * y2, rhs))
-            elif '>=' in sign:
-                ineqs.append(sympy.Le(a1 * y1 + a2 * y2, rhs))
-        row_eq = transposed_constraint_matrix[NUM_CRITERIA + 1]
-        rhs_eq = target_coefficients[NUM_CRITERIA + 1]
-        eqs_eq.append(sympy.Eq(row_eq[0] * y1 + row_eq[1] * y2, rhs_eq))
-        eqs_eq.append(sympy.Eq(y2, 0))
+        # 1. Уравнения из положительных переменных прямой задачи
+        for j in range(len(target_coefficients)):
+            var_name = f'x{j + 1}'
+            x_val = variables.get(var_name, 0.0)
+            if x_val > 1e-6:
+                # Получаем коэффициенты для переменной xj из каждого ограничения
+                column = [row[j] for row in criteria_coefficients]
+                lhs = sum(coeff * y for coeff, y in zip(column, y_symbols))
+                equation = sympy.Eq(lhs, target_coefficients[j])
+                equations.append(equation)
 
-        # Выводим всю систему
-        print("Двойственная система:")
-        for ineq in ineqs:
-            print(f"  {sympy.latex(ineq)}")
-        for eq in eqs_eq:
-            print(f"  {sympy.latex(eq)}")
+        # 2. Уравнения из неактивных ограничений прямой задачи (yi = 0)
+        for i in range(len(boundaries)):
+            # Вычисляем левую часть ограничения
+            lhs = 0.0
+            for j in range(len(target_coefficients)):
+                var_name = f'x{j + 1}'
+                lhs += criteria_coefficients[i][j] * variables.get(var_name, 0.0)
+            # Проверяем, активно ли ограничение
+            if not np.isclose(lhs, boundaries[i], atol=1e-6):
+                equations.append(sympy.Eq(y_symbols[i], 0.0))
 
-        # Решаем систему равенств
-        sol_eq = sympy.solve(eqs_eq, (y1, y2), dict=True)
-        if not sol_eq:
-            raise ValueError("Система равенств двойственной задачи не имеет решений")
-        sol = sol_eq[0]
+        # Решаем систему уравнений
+        solution = sympy.solve(equations, y_symbols)
+        if solution:
+            # Если решение найдено, преобразуем в список значений
+            y_values = [float(solution.get(y, 0.0)) for y in y_symbols]
+            G_min = np.dot(boundaries, y_values)
+            print(f"Решение системы: y = {y_values}")
+            print(f"G_min = {G_min} ден.ед.")
+        else:
+            print("Система не имеет решения")
 
-        # Проверяем все неравенства
-        for ineq in ineqs:
-            if not sympy.simplify(ineq.lhs.subs(sol) >= ineq.rhs):
-                raise AssertionError(f"Решение не удовлетворяет ограничению {ineq}")
-
-        # Получаем числовое решение
-        y = np.array([float(sol[y1]), float(sol[y2])])
-        G_min = float(np.dot(boundaries, y))
-
-        print(f"\nНайдено решение y = {y}")
-        print(f"G_min = b^T y = {G_min} по второй теореме двойственности")
-
-        # Проверяем совпадение с Q
-        if not np.isclose(G_min, Q, atol=1e-5):
-            raise AssertionError(f"G_min ({G_min}) и Q ({Q}) не равны с точностью до 1e-5")
+        # Проверка соответствия первой теореме
+        assert np.isclose(G_min, Q, atol=1e-5), "Результаты теорем не совпадают!"
 
     def third_duality_theorem():
-        """Третья теорема двойственности"""
-        lower_bound = list()
-        upper_bound = list()
-        b = list()
-        for i in range(len(D_inversed) - 1, -1, -1):
-            positive = list()
-            negative = list()
-            bH = - math.inf
-            bB = math.inf
-            for j in range(len(D_inversed)):
-                if D_inversed[i][j] > 0:
-                    positive.append(
-                        (boundaries[j], D_inversed[i][j]))
-                elif D_inversed[i][j] < 0:
-                    negative.append(
-                        (boundaries[j], D_inversed[i][j]))
-            if len(positive) > 1:
-                elem = min(positive, key=lambda x: abs(
-                    positive[0][0] / positive[0][1]))
-                lower_bound.append(elem[0] / elem[1])
-            elif len(positive) == 1:
-                lower_bound.append(abs(positive[0][0] / positive[0][1]))
-            else:
-                lower_bound.append(bH)
+        lower_bounds = []
+        upper_bounds = []
+        # Извлекаем числовые индексы из basis_values (например, ['x3', 'x5', 'x1'] -> [3, 5, 1])
+        indices = [int(var[1:]) for var in basis_values]
+        # Сортируем индексы по возрастанию (например, [1, 3, 5])
+        sorted_indices = sorted(indices)
+        resource_column_order = [basis_values.index(f'x{idx}') for idx in sorted_indices]
 
-            if len(negative) > 1:
-                elem = max(negative, key=lambda x: abs(negative[0][0] / negative[0][1]))
-                upper_bound.append(abs(elem[0] / elem[1]))
-            elif len(negative) == 1:
-                upper_bound.append(abs(negative[0][0] / negative[0][1]))
-            else:
-                upper_bound.append(bB)
-
-            b.append(boundaries[i])
-            print(f'Ресурс #{i + 1}')
+        for resource_index, col in enumerate(resource_column_order):
+            column = [row[col] for row in D_inversed]
             print(
-                f'b{i + 1} ∈ ({lower_bound[-1]}; {upper_bound[-1]})')
-            print(f'{i + 1}-й ресурс варьируется в интервале: ', end='')
-            if lower_bound[-1] == - math.inf:
-                print(f'({lower_bound[-1]}; ', end='')
-            else:
-                print(f'({b[-1] - lower_bound[-1]}; ', end='')
-            if upper_bound[-1] == math.inf:
-                print(f'{upper_bound[-1]})')
-            else:
-                print(f'{b[-1] + upper_bound[-1]})')
+                f"Ресурс #{resource_index + 1} (переменная x{sorted_indices[resource_index]}, столбец {col + 1} обратной матрицы):")
 
+            positive = []
+            negative = []
+            for j in range(len(D_inversed[0])):
+                val = D_inversed[resource_index][j]
+                if val > 0:
+                    positive.append(boundaries[resource_index] / val)
+                elif val < 0:
+                    negative.append(boundaries[resource_index] / abs(val))
+
+            lower = min(positive) if positive else -math.inf
+            upper = max(negative) if negative else math.inf
+
+            lower_bounds.append(lower)
+            upper_bounds.append(upper)
+
+            print(f"b{resource_index + 1} ∈ ({round(boundaries[resource_index] - lower, 3)}; \
+                  {boundaries[resource_index] + upper})")
+
+        print("\nВлияние на целевую функцию:")
+        total = 0
+        global y
+        for i in range(len(y)):
+            if y[i] != 0:
+                delta = y[i] * upper_bounds[i]
+                total += delta
+                print(f"∆𝐺𝑚𝑎𝑥{i + 1} = y{i + 1} * ∆b{i + 1}^B = {y[i]} * {upper_bounds[i]} = {delta}")
+            else:
+                print(upper_bounds[i])
+        print(
+            f'Совокупный эффект от изменения этих ресурсов приводит к изменению максимальной стоимости продукта ∆𝐺𝑚𝑎𝑥 на: {total}')
+        print(
+            f'Поэтому оптимальное значение целевой функции при максимальном изменении ресурсов: 𝐺𝑚𝑎𝑥 = {round(Q)} + {total} = {Q + total}[тыс.ден.ед./неделю]')
+
+    print(('\x1b[6;30;42m' + f" ПЕРВАЯ ТЕОРЕМА ДВОЙСТВЕННОСТИ " + '\x1b[0m').center(150))
     first_duality_theorem()
+    print(('\x1b[6;30;42m' + f" ВТОРАЯ ТЕОРЕМА ДВОЙСТВЕННОСТИ " + '\x1b[0m').center(150))
     second_duality_theorem()
+    print(('\x1b[6;30;42m' + f" ТРЕТЬЯ ТЕОРЕМА ДВОЙСТВЕННОСТИ " + '\x1b[0m').center(150))
     third_duality_theorem()
 
 
-# Основная программа
 with open('TPR_PRACT6.csv', encoding='utf-8') as file:
     target_function = file.readline().rstrip()
-    target_coefficients = [15, 5, 3, 20]
-    criteria_function = ['4.0 + 2.0 + 1.0 + 4.0 <= 1200', '1.0 + 5.0 + 3.0 + 1.0 <= 1000']
-    print(criteria_function)
-    criteria_coefficients, boundaries = [[4, 2, 1, 4], [1, 5, 3, 1]], [1200, 1000]
+    target_coefficients = list(map(float, [i.group(1) for i in re.finditer(
+        r'(\d+(\.\d+)?) {0,}[*]? {0,}\w', target_function)]))
+    criteria_function = [file.readline().rstrip() for _ in range(NUM_CRITERIA)]
+    criteria_coefficients, boundaries = get_coefficients(criteria_function)
     print('Переход к задаче линейного программирования:',
           target_function, sep='\n')
-
+    for i in criteria_function:
+        print("{ " + i)
     system = list(map(list, list(zip(*criteria_coefficients))))
     system.append(boundaries.copy())
     basis_coef = [0] * NUM_CRITERIA
@@ -249,26 +283,20 @@ with open('TPR_PRACT6.csv', encoding='utf-8') as file:
     non_basis_values = re.findall(r'[A-Za-z]\d{1,}', target_function)
     basis_values = [f'{non_basis_values[-1][0]}{i}' for i in range(
         int(non_basis_values[-1][1]) + 1, NUM_CRITERIA + int(non_basis_values[-1][1]) + 1)]
-
-    # Решение симплекс-методом
     F_str, Q = create_simplex_table(
         system, basis_coef, non_basis_coef, basis_values, non_basis_values)
     num_iteration = 0
     while num_iteration < 50 and min(F_str) < 0:
         print(
-            ('\x1b[6;30;42m' + f"Итерация #{num_iteration}" + '\x1b[0m').center(201))
+            ('\x1b[6;30;42m' + f"Итерация #{num_iteration}" + '\x1b[0m').center(150))
         system, basis_coef, non_basis_coef, basis_values, non_basis_values, F_str, Q = simplex_iteration(
             system, basis_coef, non_basis_coef, basis_values, non_basis_values, F_str, Q)
         print_table(system, basis_coef, non_basis_coef,
                     basis_values, non_basis_values)
         num_iteration += 1
-
     if num_iteration != 50:
-        print(f'Решение найдено! Общая прибыль составляет {
-        round(Q, 3)} денежных единиц')
+        print(f'Решение найдено! Общая прибыль составляет {round(Q, 3)}\n\n')
     else:
-        print('Задача не имеет решения')
+        print('Проблема не имеет решения')
         exit(0)
-
-    # Решение двойственной задачи
     dual_task(target_coefficients, boundaries)

@@ -228,11 +228,11 @@ def dual_task(target_coefficients=None, boundaries=None):
             positive = []
             negative = []
             for j in range(len(D_inversed[0])):
-                val = D_inversed[resource_index][j]
+                val = D_inversed[j][resource_index]
                 if val > 0:
-                    positive.append(boundaries[resource_index] / val)
+                    positive.append(optimal_basis_indices[resource_index] / val)
                 elif val < 0:
-                    negative.append(boundaries[resource_index] / abs(val))
+                    negative.append(optimal_basis_indices[resource_index] / abs(val))
 
             lower = min(positive) if positive else -math.inf
             upper = max(negative) if negative else math.inf
